@@ -1,6 +1,5 @@
 import { log } from './log'
 
-const RECURSIVE_FIELD = ['Link', 'Entry']
 const EXCLUDED_TYPE = ['asset', 'author', 'brand', 'games', 'global', 'blog', 'news', 'theme']
 
 let references = {}
@@ -39,7 +38,7 @@ async function inspectField(space, field) {
     }))
   }
 
-  if (field && field.sys && RECURSIVE_FIELD.includes(field.sys.type)) {
+  if (field && field.sys && field.sys.type === 'Link' && field.sys.linkType === 'Entry') {
     await findReferences(space, field.sys.id)
   }
 }
@@ -73,9 +72,7 @@ async function createNewEntriesFromReferences(space, tag) {
 
   for (let entryId in references) {
     const entry = references[entryId]
-
-    if (entry.fields.internalName && entry.fields.internalName['en-SG']) entry.fields.internalName['en-SG'] = tag |+ ' ' + entry.fields.internalName['en-SG']
-
+    if (entry.fields.internalName && entry.fields.internalName['en-SG']) entry.fields.internalName['en-SG'] = tag + ' ' + entry.fields.internalName['en-SG']
     const newEntry = await createEntry(space, entry.sys.contentType.sys.id, { fields: entry.fields })
     newReferenceCount++
     newEntries[entryId] = newEntry
@@ -94,7 +91,8 @@ async function updateReferencesOnField(field, newReferences) {
   if (field && field.sys && field.sys.sys === 'Link' && field.sys.linkType === 'Entry') {
     const oldReference = references[field.sys.id]
     const newReference = newReferences[field.sys.id]
-    field.sys.id = newReference.sys.id
+    if(newReference)
+      field.sys.id = newReference.sys.id
   }
 }
 
