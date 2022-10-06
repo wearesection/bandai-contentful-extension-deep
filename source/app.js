@@ -49,7 +49,7 @@ window.doTheDeepCopy = async function() {
   activationButton.classList.remove('cf-is-loading')
 }
 
-document.querySelector('.clone-tag').value = `(${new Date().toUTCString()})`
+document.querySelector('.clone-tag').value = `KR | / TC | / SC |`
 
 window.toggleConfirmModal = function (flag) {
   document.querySelector('.confirm').style.display = flag ? 'flex' : 'none'

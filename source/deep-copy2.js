@@ -1,5 +1,8 @@
 import { log } from './log'
 
+const RECURSIVE_FIELD = ['Link', 'Entry']
+const EXCLUDED_TYPE = ['asset', 'author', 'brand', 'games', 'global', 'blog', 'news', 'theme']
+
 let references = {}
 let referenceCount = 0
 let newReferenceCount = 0
@@ -8,72 +11,76 @@ let updatedReferenceCount = 0
 const statusUpdateTimeout = 3000
 const waitTime = 100
 
-async function wait (ms) {
+async function wait(ms) {
   return new Promise(resolve => {
     setTimeout(resolve, ms)
   })
 }
 
-async function updateEntry (space, entry) {
+async function updateEntry(space, entry) {
   await wait(waitTime)
   return await space.updateEntry(entry)
 }
 
-async function createEntry (space, type, data) {
+async function createEntry(space, type, data) {
   await wait(waitTime)
   return await space.createEntry(type, data)
 }
 
-async function getEntry (space, entryId) {
+async function getEntry(space, entryId) {
   await wait(waitTime)
   return await space.getEntry(entryId)
 }
 
-async function inspectField (space, field) {
+async function inspectField(space, field) {
   if (field && Array.isArray(field)) {
     return await Promise.all(field.map(async (f) => {
       return await inspectField(space, f)
     }))
   }
-  
-  if (field && field.sys && field.sys.type === 'Link' && field.sys.linkType === 'Entry') {
+
+  if (field && field.sys && RECURSIVE_FIELD.includes(field.sys.type)) {
     await findReferences(space, field.sys.id)
   }
 }
 
-async function findReferences (space, entryId) {
+async function findReferences(space, entryId) {
   if (references[entryId]) {
     return
   }
 
   const entry = await getEntry(space, entryId)
 
-  referenceCount++
+  if (!EXCLUDED_TYPE.includes(entry.sys.contentType.sys.id)) {
+    referenceCount++
 
-  references[entryId] = entry
+    references[entryId] = entry
 
-  for (let fieldName in entry.fields) {
-    const field = entry.fields[fieldName]
+    for (let fieldName in entry.fields) {
+      const field = entry.fields[fieldName]
 
-    for (let lang in field) {
-      const langField = field[lang]
-      
-      await inspectField(space, langField)
+      for (let lang in field) {
+        const langField = field[lang]
+
+        await inspectField(space, langField)
+      }
     }
   }
 }
 
-async function createNewEntriesFromReferences (space, tag) {
+async function createNewEntriesFromReferences(space, tag) {
   const newEntries = {}
 
   for (let entryId in references) {
     const entry = references[entryId]
-    if (entry.fields.title && entry.fields.title['en-US']) entry.fields.title['en-US'] = entry.fields.title['en-US'] + ' ' + tag
+
+    if (entry.fields.internalName && entry.fields.internalName['en-SG']) entry.fields.internalName['en-SG'] = tag |+ ' ' + entry.fields.internalName['en-SG']
+
     const newEntry = await createEntry(space, entry.sys.contentType.sys.id, { fields: entry.fields })
     newReferenceCount++
     newEntries[entryId] = newEntry
   }
-  
+
   return newEntries
 }
 
@@ -84,7 +91,7 @@ async function updateReferencesOnField(field, newReferences) {
     }))
   }
 
-  if (field && field.sys && field.sys.type === 'Link' && field.sys.linkType === 'Entry') {
+  if (field && field.sys && field.sys.sys === 'Link' && field.sys.linkType === 'Entry') {
     const oldReference = references[field.sys.id]
     const newReference = newReferences[field.sys.id]
     field.sys.id = newReference.sys.id
@@ -97,10 +104,10 @@ async function updateReferenceTree(space, newReferences) {
 
     for (let fieldName in entry.fields) {
       const field = entry.fields[fieldName]
-  
+
       for (let lang in field) {
         const langField = field[lang]
-        
+
         await updateReferencesOnField(langField, newReferences)
       }
     }
@@ -110,7 +117,7 @@ async function updateReferenceTree(space, newReferences) {
   }
 }
 
-async function recursiveClone (space, entryId, tag) {
+async function recursiveClone(space, entryId, tag) {
   references = {}
   referenceCount = 0
   newReferenceCount = 0
@@ -120,7 +127,7 @@ async function recursiveClone (space, entryId, tag) {
   let statusUpdateTimer = null
 
   log('')
-  log(`Finding references recursively...`)
+  log(`Finding references recursively`)
 
   statusUpdateTimer = setInterval(() => {
     log(` - found ${referenceCount} entries so far...`)
@@ -134,7 +141,7 @@ async function recursiveClone (space, entryId, tag) {
   log(`Creating new entries...`)
 
   statusUpdateTimer = setInterval(() => {
-    log(` - created ${newReferenceCount}/${referenceCount} - ${Math.round((newReferenceCount / referenceCount) * 100)}%`)
+    log(` - Created ${newReferenceCount}/${referenceCount} - ${Math.round((newReferenceCount / referenceCount) * 100)}%`)
   }, statusUpdateTimeout)
 
   const newReferences = await createNewEntriesFromReferences(space, tag)
